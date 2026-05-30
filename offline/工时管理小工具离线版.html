@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>工包管理小工具</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        body { padding: 20px; max-width: 1400px; margin: 0 auto; }
+        .header { margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #007bff; }
+        .tab-container { margin: 20px 0; }
+        .tab { padding: 10px 20px; background: #eee; border: none; cursor: pointer; margin-right: 5px; }
+        .tab.active { background: #007bff; color: white; }
+        .tab-content { display: none; padding: 20px; border: 1px solid #ddd; border-top: none; }
+        .tab-content.active { display: block; }
+        input, select { padding: 8px; margin: 5px 0; }
+        button { padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f8f9fa; position: sticky; top: 0; z-index: 1; }
+        .stat-card { display: inline-block; width: 32%; margin: 10px 0.5%; padding: 15px; background: #f8f9fa; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #007bff; }
+        .group-container { margin: 20px 0; border: 1px solid #007bff; border-radius: 6px; overflow: hidden; }
+        .group-header { padding: 12px 20px; background: #007bff; color: white; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .group-count { font-size: 14px; font-weight: normal; opacity: 0.9; }
+        .sub-group { margin: 10px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
+        .sub-group-header { padding: 10px 15px; background: #f1f8ff; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .sub-group-title { font-weight: bold; color: #007bff; }
+        .sub-group-count { color: #666; font-size: 14px; }
+        .sub-group-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+        .sub-group-content.show { max-height: 2000px; padding: 10px; }
+        .rate-high { color: #28a745; }
+        .rate-middle { color: #ffc107; }
+        .rate-low { color: #dc3545; }
+        .gantt-container { margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 6px; }
+        .gantt-row { display: flex; align-items: center; margin: 15px 0; }
+        .gantt-label { width: 150px; font-weight: bold; }
+        .gantt-bar-container { flex: 1; height: 40px; background: #eee; border-radius: 4px; position: relative; overflow: hidden; }
+        .gantt-needed { position: absolute; top: 0; left: 0; height: 100%; background: #ffc107; opacity: 0.8; }
+        .gantt-exist { position: absolute; top: 0; left: 0; height: 100%; background: #28a745; opacity: 0.7; }
+        .gantt-shortage { position: absolute; top: 0; left: 0; height: 100%; background: #dc3545; opacity: 0.8; }
+        .gantt-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; color:#222; }
+        .filter-container { margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }
+        .dimension-switch { margin: 15px 0; }
+        .dimension-btn { padding: 8px 16px; margin-right: 10px; }
+        .dimension-btn.active { background: #007bff; color: white; }
+        .table-scroll { max-height: 400px; overflow-y: auto; }
+        .filter-row { display: flex; gap: 20px; margin: 10px 0; flex-wrap: wrap; }
+        .filter-group { background: #f1f8ff; padding: 10px; border-radius: 6px; min-width: 200px; }
+        .filter-group h4 { margin-bottom: 8px; color: #007bff; }
+        .checkbox-item { margin: 4px 0; display: block; }
+        .summary-bar { background: #e8f4ff; padding: 10px 15px; border-radius: 6px; margin: 10px 0; font-size: 14px; }
+        .calc-note {
+            background:#f8f9ff; border-left:4px solid #007bff; padding:12px 15px; margin:15px 0;
+            border-radius:0 4px 4px 0; font-size:14px; line-height:1.6;
+        }
+    </style>
+    <script src="./xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="header">
+    <h1>工包管理小工具</h1>
+    <p>剩余工作量精准预警｜按工作日计算｜</p>
+</div>
+
+<div>
+    <input type="file" id="excelFile" accept=".xlsx, .xls"/>
+    <button onclick="loadExcel()">读取Excel</button>
+    <p id="fileStatus" style="color:#666"></p>
+</div>
+
+<div class="tab-container">
+    <button class="tab active" onclick="openTab('tab1')">工包汇总</button>
+    <button class="tab" onclick="openTab('tab2')">可分配工包</button>
+    <button class="tab" onclick="openTab('tab3')">工包预警</button>
+</div>
+
+<!-- ===================== 工包汇总 ===================== -->
+<div id="tab1" class="tab-content active">
+    <h3>工包汇总（支持多选筛选）</h3>
+    <div class="filter-row">
+        <div class="filter-group">
+            <h4>人员类型（可多选）</h4>
+            <label class="checkbox-item"><input type="checkbox" value="外员" onchange="renderFilteredSummary()"> 外员</label>
+            <label class="checkbox-item"><input type="checkbox" value="自有" onchange="renderFilteredSummary()"> 自有</label>
+        </div>
+        <div class="filter-group" id="batchCheckContainer">
+            <h4>批次（可多选）</h4>
+            <i>读取Excel后自动显示批次</i>
+        </div>
+    </div>
+    <div id="summaryInfo" class="summary-bar">已选：0 个工包｜总工作量：0.00</div>
+    <div id="filteredResultContainer" class="table-scroll">
+        <table>
+            <tr><th>批次</th><th>人员类型</th><th>项目编码</th><th>工包编码</th><th>工包名称</th><th>计划工作量</th><th>实际工作量</th></tr>
+            <tr><td colspan="7" style="text-align:center">请上传Excel</td></tr>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== 可分配工包 ===================== -->
+<div id="tab2" class="tab-content">
+    <h3>可分配工包列表</h3>
+    <!-- 新增：可分配工包计算逻辑说明，样式同工包预警 -->
+    <div class="calc-note">
+        <strong>📌 可分配工包计算逻辑</strong><br>
+        1. 计划开始时间 < 当前日期（已开始）<br>
+        2. 计划结束时间 > 当前日期（未结束）<br>
+        3. 实际工作量 < 计划工作量（未完成）<br>
+        4. 计划工作量 > 0（有效工包）<br>
+        5. 排序规则：按计划结束日期由近到远（降序）排列，保证快结束的工包优先消耗
+    </div>
+    <div class="filter-container">
+        <label>筛选：</label>
+        <select id="assignStaffFilter" onchange="filterAssignableByStaff()">
+            <option value="all">全部</option><option value="外员">外员</option><option value="自有">自有</option>
+        </select>
+    </div>
+    <div class="stat-card"><div>可分配总数</div><div class="stat-value" id="totalAssignCount">0</div></div>
+    <div class="stat-card"><div>外员可分配</div><div class="stat-value" id="outerAssignCount">0</div></div>
+    <div class="stat-card"><div>自有可分配</div><div class="stat-value" id="innerAssignCount">0</div></div>
+    <div id="assignStaffGroupList"></div>
+</div>
+
+<!-- ===================== 工包预警（最终规则版） ===================== -->
+<div id="tab3" class="tab-content">
+    <h3>工包预警（剩余工作量 · 精准版）</h3>
+    <div class="calc-note">
+        <strong>📌 计算逻辑说明</strong><br>
+        1. 总产能 = 人数 × 日均工时 × 工作日天数（周一至周五）<br>
+        2. 工包剩余工作量 = 所有未到期工包的（计划工作量 − 实际工作量）总和<br>
+        3. 总产能 ≤ 工包剩余工作量 → 富余；总产能 ＞ 剩余工作量 → 短缺
+    </div>
+
+    <div>
+        <label>预警时间段：</label>
+        <input type="date" id="warningStart">
+        <input type="date" id="warningEnd">
+    </div>
+    <div>
+        <label>自有人数：</label><input type="number" id="innerCount" value="20" style="width:80px">
+        <label>日均工时：</label><input type="number" id="innerDaily" value="8" style="width:80px">
+    </div>
+    <div>
+        <label>外员人数：</label><input type="number" id="outerCount" value="10" style="width:80px">
+        <label>日均工时：</label><input type="number" id="outerDaily" value="8" style="width:80px">
+    </div>
+    <button onclick="generateWarning()">计算预警</button>
+
+    <div id="warningResult" style="display:none;margin-top:20px">
+        <h3>结果：<span id="warningPeriod"></span></h3>
+        <div class="gantt-container">
+            <div class="gantt-row">
+                <div class="gantt-label">外员</div>
+                <div class="gantt-bar-container">
+                    <div class="gantt-needed" id="outerNeededBar"></div>
+                    <div class="gantt-exist" id="outerExistBar"></div>
+                    <div class="gantt-shortage" id="outerShortageBar"></div>
+                    <div class="gantt-text" id="outerWarningText"></div>
+                </div>
+            </div>
+            <div class="gantt-row">
+                <div class="gantt-label">自有</div>
+                <div class="gantt-bar-container">
+                    <div class="gantt-needed" id="innerNeededBar"></div>
+                    <div class="gantt-exist" id="innerExistBar"></div>
+                    <div class="gantt-shortage" id="innerShortageBar"></div>
+                    <div class="gantt-text" id="innerWarningText"></div>
+                </div>
+            </div>
+        </div>
+
+        <div style="background:#f8f9fa;padding:15px;margin:20px 0">
+            <p id="outerConclusion"></p>
+            <p id="innerConclusion"></p>
+        </div>
+
+        <div style="display:flex;gap:20px">
+            <div style="flex:1"><h4>外员未完工包明细</h4><div class="table-scroll"><table id="outerExistTable"></table></div></div>
+            <div style="flex:1"><h4>自有未完工包明细</h4><div class="table-scroll"><table id="innerExistTable"></table></div></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let excelData = [];
+let today = new Date();
+let assignableData = [];
+let allBatches = [];
+
+// 切换标签
+function openTab(tabId) {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+    document.getElementById(tabId).classList.add("active");
+    event.currentTarget.classList.add("active");
+}
+
+// 人员类型映射
+function mapStaffType(type) {
+    if (!type) return null;
+    let t = type.trim();
+    if (t === "商务外购") return "外员";
+    if (t === "中心自有") return "自有";
+    return null;
+}
+
+// 读取Excel
+function loadExcel() {
+    let file = document.getElementById("excelFile").files[0];
+    if (!file) { alert("请选择Excel文件"); return; }
+    document.getElementById("fileStatus").innerText = "正在读取...";
+
+    let reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            let data = new Uint8Array(e.target.result);
+            let wb = XLSX.read(data, { type: "array" });
+            let ws = wb.Sheets[wb.SheetNames[0]];
+            let json = XLSX.utils.sheet_to_json(ws);
+
+            excelData = json.filter(item => {
+                item["人员类型"] = mapStaffType(item["资源类型"]);
+                item["所属批次"] = item["所属批次"] || "未指定批次";
+                return item["人员类型"] != null;
+            });
+
+            allBatches = [...new Set(excelData.map(x => x["所属批次"]))].sort();
+            buildBatchCheckboxes();
+            renderFilteredSummary();
+            refreshAssignable();
+
+            let total = excelData.length;
+            let outer = excelData.filter(x => x["人员类型"] === "外员").length;
+            let inner = total - outer;
+            document.getElementById("fileStatus").innerText = `读取成功！共 ${total} 条（外员 ${outer}，自有 ${inner}）`;
+        } catch (err) {
+            alert("读取失败：" + err.message);
+            console.error(err);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// 构建批次多选框
+function buildBatchCheckboxes() {
+    let container = document.getElementById("batchCheckContainer");
+    container.innerHTML = "<h4>批次（可多选）</h4>";
+    allBatches.forEach(batch => {
+        let label = document.createElement("label");
+        label.className = "checkbox-item";
+        label.innerHTML = `<input type="checkbox" value="${batch}" onchange="renderFilteredSummary()"> ${batch}`;
+        container.appendChild(label);
+    });
+}
+
+// 筛选汇总
+function renderFilteredSummary() {
+    let selectedStaff = Array.from(document.querySelectorAll('#tab1 input[type="checkbox"]:checked'))
+        .filter(c => c.value === "外员" || c.value === "自有").map(c => c.value);
+    let selectedBatches = Array.from(document.querySelectorAll('#tab1 input[type="checkbox"]:checked'))
+        .filter(c => c.value !== "外员" && c.value !== "自有").map(c => c.value);
+
+    let filtered = excelData.filter(item => {
+        let staffOk = selectedStaff.length === 0 || selectedStaff.includes(item["人员类型"]);
+        let batchOk = selectedBatches.length === 0 || selectedBatches.includes(item["所属批次"]);
+        return staffOk && batchOk;
+    });
+
+    let totalCnt = filtered.length;
+    let totalWork = filtered.reduce((s, x) => s + (parseFloat(x["计划工作量"]) || 0), 0);
+    document.getElementById("summaryInfo").innerText = `已选：${totalCnt} 个工包｜总工作量：${totalWork.toFixed(2)}`;
+
+    let html = `<tr><th>批次</th><th>人员类型</th><th>项目编码</th><th>工包编码</th><th>工包名称</th><th>计划工作量</th><th>实际工作量</th></tr>`;
+    if (filtered.length === 0) {
+        html += `<tr><td colspan="7" style="text-align:center">无匹配数据</td></tr>`;
+    } else {
+        filtered.forEach(item => {
+            html += `<tr>
+                <td>${item["所属批次"]}</td>
+                <td>${item["人员类型"]}</td>
+                <td>${item["项目编码"] || "-"}</td>
+                <td>${item["工作包编码"] || "-"}</td>
+                <td>${item["工作包名称"] || "-"}</td>
+                <td>${(parseFloat(item["计划工作量"]) || 0).toFixed(2)}</td>
+                <td>${(parseFloat(item["实际工作量"]) || 0).toFixed(2)}</td>
+            </tr>`;
+        });
+    }
+    document.getElementById("filteredResultContainer").innerHTML = `<table>${html}</table>`;
+}
+
+// ==================== 可分配 ====================
+function isAssignable(item) {
+    let s = new Date(item["计划开始时间"]);
+    let e = new Date(item["计划结束时间"]);
+    let p = parseFloat(item["计划工作量"]) || 0;
+    let a = parseFloat(item["实际工作量"]) || 0;
+    return !isNaN(s) && !isNaN(e) && s < today && e > today && a < p && p > 0;
+}
+
+// 格式化日期辅助函数
+function formatDate(dateStr) {
+    if (!dateStr) return "-";
+    let date = new Date(dateStr);
+    if (isNaN(date.getTime())) return "-";
+    return `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+}
+
+// 执行率样式类辅助函数
+function getRateClass(rate) {
+    rate = parseFloat(rate);
+    if (rate >= 80) return "rate-high";
+    if (rate >= 50) return "rate-middle";
+    return "rate-low";
+}
+
+// 折叠/展开分组辅助函数
+function toggleGroup(el) {
+    let content = el.nextElementSibling;
+    content.style.display = content.style.display === "none" ? "block" : "none";
+}
+
+function refreshAssignable() {
+    // 核心修改1：纯按计划结束日期由近到远排序（升序），完全剔除批次排序
+    assignableData = excelData.filter(isAssignable).sort((a, b) => {
+        const dateA = new Date(a["计划结束时间"]);
+        const dateB = new Date(b["计划结束时间"]);
+        const timeA = isNaN(dateA.getTime()) ? Infinity : dateA.getTime();
+        const timeB = isNaN(dateB.getTime()) ? Infinity : dateB.getTime();
+        // 仅按结束日期排序（近→远）
+        return timeA - timeB;
+    });
+
+    let outer = assignableData.filter(x => x["人员类型"] === "外员").length;
+    let inner = assignableData.filter(x => x["人员类型"] === "自有").length;
+    document.getElementById("totalAssignCount").innerText = assignableData.length;
+    document.getElementById("outerAssignCount").innerText = outer;
+    document.getElementById("innerAssignCount").innerText = inner;
+    renderAssignableStaff();
+}
+
+function renderAssignableStaff(filter = "all") {
+    let cont = document.getElementById("assignStaffGroupList");
+    cont.innerHTML = "";
+    
+    // 核心修改2：不按批次分组，直接按排序后的数组渲染
+    let filteredData = [];
+    if (filter === "all") {
+        filteredData = assignableData;
+    } else {
+        filteredData = assignableData.filter(x => x["人员类型"] === filter);
+    }
+
+    if (filteredData.length === 0) {
+        cont.innerHTML = "<div style='text-align:center;padding:20px'>暂无可分配工包</div>";
+        return;
+    }
+
+    // 按人员类型拆分（仅做标题分组，不打乱排序）
+    const staffTypes = filter === "all" ? ["外员", "自有"] : [filter];
+    staffTypes.forEach(st => {
+        const typeData = filteredData.filter(x => x["人员类型"] === st);
+        if (typeData.length === 0) return;
+
+        let html = `<div class="group-container">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span>${st} 可分配工包</span><span class="group-count">共 ${typeData.length} 个</span>
+            </div>
+            <div class="group-content" style="padding:10px;display:block">
+                <div class="table-scroll"><table>
+                <tr><th>批次</th><th>项目编码</th><th>工包编码</th><th>工包名称</th><th>计划开始</th><th>计划结束</th><th>计划工作量</th><th>实际工作量</th><th>执行率</th></tr>`;
+        
+        // 核心修改3：直接遍历排序后的数组，不按批次二次分组
+        typeData.forEach(i => {
+            let r = ((parseFloat(i["实际工作量"]) || 0) / (parseFloat(i["计划工作量"]) || 1) * 100).toFixed(2);
+            html += `<tr>
+                <td>${i["所属批次"]}</td>
+                <td>${i["项目编码"]||"-"}</td>
+                <td>${i["工作包编码"]||"-"}</td>
+                <td>${i["工作包名称"]||"-"}</td>
+                <td>${formatDate(i["计划开始时间"])}</td>
+                <td>${formatDate(i["计划结束时间"])}</td>
+                <td>${(parseFloat(i["计划工作量"])||0).toFixed(2)}</td>
+                <td>${(parseFloat(i["实际工作量"])||0).toFixed(2)}</td>
+                <td class="${getRateClass(r)}">${r}%</td>
+            </tr>`;
+        });
+
+        html += `</table></div></div></div>`;
+        cont.innerHTML += html;
+    });
+}
+
+function filterAssignableByStaff() {
+    renderAssignableStaff(document.getElementById("assignStaffFilter").value);
+}
+
+// ==================== 预警计算 ====================
+function generateWarning() {
+    let s = document.getElementById("warningStart").value;
+    let e = document.getElementById("warningEnd").value;
+    if (!s || !e) { alert("请选择时间段"); return; }
+    let st = new Date(s);
+    let et = new Date(e);
+    if (st > et) { alert("开始时间不能晚于结束"); return; }
+
+    let innerCount = parseInt(document.getElementById("innerCount").value) || 0;
+    let innerDaily = parseFloat(document.getElementById("innerDaily").value) || 0;
+    let outerCount = parseInt(document.getElementById("outerCount").value) || 0;
+    let outerDaily = parseFloat(document.getElementById("outerDaily").value) || 0;
+
+    let workDays = calcWorkDays(st, et);
+
+    // 总产能
+    let innerCapacity = innerCount * innerDaily * workDays;
+    let outerCapacity = outerCount * outerDaily * workDays;
+
+    // 剩余工作量
+    let [innerRemain, innerList] = getRemainWorkload("自有");
+    let [outerRemain, outerList] = getRemainWorkload("外员");
+
+    document.getElementById("warningResult").style.display = "block";
+    document.getElementById("warningPeriod").innerText = `${s} 至 ${e}（共 ${workDays} 个工作日）`;
+
+    renderGantt("outer", outerCapacity, outerRemain);
+    renderGantt("inner", innerCapacity, innerRemain);
+
+    document.getElementById("outerConclusion").innerHTML = getText("外员", outerCapacity, outerRemain);
+    document.getElementById("innerConclusion").innerHTML = getText("自有", innerCapacity, innerRemain);
+
+    renderTable("outer", outerList);
+    renderTable("inner", innerList);
+}
+
+// 计算工作日（周一～周五）
+function calcWorkDays(start, end) {
+    let cnt = 0;
+    let cur = new Date(start);
+    while (cur <= end) {
+        let d = cur.getDay();
+        if (d >= 1 && d <= 5) cnt++;
+        cur.setDate(cur.getDate() + 1);
+    }
+    return cnt;
+}
+
+// 获取剩余工作量
+function getRemainWorkload(staffType) {
+    let now = new Date();
+    let list = excelData.filter(item => {
+        if (item["人员类型"] !== staffType) return false;
+        const endDate = new Date(item["计划结束时间"]);
+        const planWork = parseFloat(item["计划工作量"]) || 0;
+        const actualWork = parseFloat(item["实际工作量"]) || 0;
+        return !isNaN(endDate) && endDate > now && actualWork < planWork && planWork > 0;
+    });
+
+    const remainWorkload = list.reduce((sum, item) => {
+        const plan = parseFloat(item["计划工作量"]) || 0;
+        const actual = parseFloat(item["实际工作量"]) || 0;
+        return sum + (plan - actual);
+    }, 0);
+
+    return [remainWorkload, list];
+}
+
+// 渲染甘特图
+function renderGantt(type, capacity, remain) {
+    const neededBar = document.getElementById(`${type}NeededBar`);
+    const existBar = document.getElementById(`${type}ExistBar`);
+    const shortageBar = document.getElementById(`${type}ShortageBar`);
+    const textEl = document.getElementById(`${type}WarningText`);
+
+    // 重置宽度
+    neededBar.style.width = "0%";
+    existBar.style.width = "0%";
+    shortageBar.style.width = "0%";
+
+    let maxVal = Math.max(capacity, remain);
+    if (maxVal === 0) {
+        textEl.innerText = "无数据";
+        return;
+    }
+
+    // 计算占比
+    let capacityRatio = (capacity / maxVal) * 100;
+    let remainRatio = (remain / maxVal) * 100;
+
+    if (capacity >= remain) {
+        // 产能充足，有富余
+        existBar.style.width = `${remainRatio}%`;
+        shortageBar.style.width = "0%";
+        textEl.innerText = `剩余工作量${remain.toFixed(2)}｜产能${capacity.toFixed(2)}（富余${(capacity - remain).toFixed(2)}）`;
+    } else {
+        // 产能不足，有缺口
+        existBar.style.width = `${capacityRatio}%`;
+        shortageBar.style.width = `${remainRatio - capacityRatio}%`;
+        textEl.innerText = `剩余工作量${remain.toFixed(2)}｜产能${capacity.toFixed(2)}（短缺${(remain - capacity).toFixed(2)}）`;
+    }
+    neededBar.style.width = `${remainRatio}%`;
+}
+
+// 获取结论文本
+function getText(type, capacity, remain) {
+    let diff = Math.abs(capacity - remain);
+    if (capacity >= remain) {
+        return `<strong>${type}</strong>：剩余工作量 ${remain.toFixed(2)}，总产能 ${capacity.toFixed(2)}，产能富余 ${diff.toFixed(2)}`;
+    } else {
+        return `<strong>${type}</strong>：剩余工作量 ${remain.toFixed(2)}，总产能 ${capacity.toFixed(2)}，产能短缺 ${diff.toFixed(2)}`;
+    }
+}
+
+// 渲染明细表格
+function renderTable(type, list) {
+    let tableEl = document.getElementById(`${type}ExistTable`);
+    if (list.length === 0) {
+        tableEl.innerHTML = `<tr><td colspan="8" style="text-align:center">无未完工包</td></tr>`;
+        return;
+    }
+
+    let html = `<tr><th>批次</th><th>项目编码</th><th>工包编码</th><th>工包名称</th><th>计划开始</th><th>计划结束</th><th>计划工作量</th><th>实际工作量</th></tr>`;
+    list.forEach(item => {
+        html += `<tr>
+            <td>${item["所属批次"]}</td>
+            <td>${item["项目编码"]||"-"}</td>
+            <td>${item["工作包编码"]||"-"}</td>
+            <td>${item["工作包名称"]||"-"}</td>
+            <td>${formatDate(item["计划开始时间"])}</td>
+            <td>${formatDate(item["计划结束时间"])}</td>
+            <td>${(parseFloat(item["计划工作量"])||0).toFixed(2)}</td>
+            <td>${(parseFloat(item["实际工作量"])||0).toFixed(2)}</td>
+        </tr>`;
+    });
+    tableEl.innerHTML = html;
+}
+</script>
+</body>
+</html>
